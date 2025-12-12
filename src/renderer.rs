@@ -3,9 +3,13 @@ use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+use std::sync::Arc;
 use std::{env, fs};
 use tempdir::TempDir;
 use tiny_skia::{Paint, PathBuilder, Pixmap, PixmapPaint, Stroke, Transform};
+
+use hayro::{render, Pdf, RenderSettings};
+use hayro_interpret::InterpreterSettings;
 
 /// The options that should be applied when rendering a PDF to a pixmap.
 #[derive(Copy, Clone)]
@@ -26,7 +30,7 @@ pub type RenderedPage = Vec<u8>;
 pub type RenderedDocument = Vec<RenderedPage>;
 
 /// A PDF backend used to render a PDF. Each backend calls a command-line
-/// utility in the background
+/// utility in the background (except Hayro which is pure Rust).
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum Renderer {
     /// The pdfium renderer.
@@ -42,7 +46,9 @@ pub enum Renderer {
     /// The pdfbox renderer.
     Pdfbox,
     /// The ghostscript renderer.
-    Ghostscript
+    Ghostscript,
+    /// The hayro renderer (pure Rust).
+    Hayro,
 }
 
 impl Renderer {
@@ -56,6 +62,7 @@ impl Renderer {
             Renderer::Pdfjs => "pdfjs".to_string(),
             Renderer::Pdfbox => "pdfbox".to_string(),
             Renderer::Ghostscript => "ghostscript".to_string(),
+            Renderer::Hayro => "hayro".to_string(),
         }
     }
 
@@ -68,6 +75,7 @@ impl Renderer {
             Renderer::Pdfjs => (48, 17, 207),
             Renderer::Pdfbox => (237, 38, 98),
             Renderer::Ghostscript => (235, 38, 218),
+            Renderer::Hayro => (100, 149, 237), // cornflower blue
         }
     }
 
@@ -138,8 +146,12 @@ impl Renderer {
         Ok(pixmaps)
     }
 
-    /// Render a PDF file as a sequence of PDF files, using the specified renderer.
-    pub fn render_as_png(&self, buf: &[u8], options: &RenderOptions) -> Result<RenderedDocument, String> {
+    /// Render a PDF file as a sequence of PNG images, using the specified renderer.
+    pub fn render_as_png(
+        &self,
+        buf: &[u8],
+        options: &RenderOptions,
+    ) -> Result<RenderedDocument, String> {
         match self {
             Renderer::Pdfium => render_pdfium(buf, options),
             Renderer::Mupdf => render_mupdf(buf, options),
@@ -148,6 +160,7 @@ impl Renderer {
             Renderer::Pdfjs => render_pdfjs(buf, options),
             Renderer::Pdfbox => render_pdfbox(buf, options),
             Renderer::Ghostscript => render_ghostscript(buf, options),
+            Renderer::Hayro => render_hayro(buf, options),
         }
     }
 }
@@ -177,8 +190,11 @@ pub fn render_ghostscript(buf: &[u8], options: &RenderOptions) -> Result<Rendere
             .arg("-dTextAlphaBits=4")
             .arg("-sDEVICE=png16m")
             .arg("-dBATCH")
-            .arg(format!("-r{}",(72.0 * options.scale).to_string()))
-            .arg(format!("-sOutputFile={}", PathBuf::from(dir).join("out-%d.png").to_str().unwrap()))
+            .arg(format!("-r{}", (72.0 * options.scale).to_string()))
+            .arg(format!(
+                "-sOutputFile={}",
+                PathBuf::from(dir).join("out-%d.png").to_str().unwrap()
+            ))
             .arg(&input_path)
             .output()
             .map_err(|e| format!("{}: {}", "failed to run renderer", e))
@@ -283,7 +299,11 @@ pub fn render_pdfbox(buf: &[u8], options: &RenderOptions) -> Result<RenderedDocu
     render_via_cli(buf, command, out_file_pattern)
 }
 
-fn render_via_cli<F>(buf: &[u8], command_fn: F, out_file_pattern: &str) -> Result<RenderedDocument, String>
+fn render_via_cli<F>(
+    buf: &[u8],
+    command_fn: F,
+    out_file_pattern: &str,
+) -> Result<RenderedDocument, String>
 where
     F: Fn(&Path, &Path) -> Result<Output, String>,
 {
@@ -324,4 +344,26 @@ where
     let out_files = out_files.iter().map(|e| fs::read(&e.1).unwrap()).collect();
 
     Ok(out_files)
+}
+
+/// Render a PDF file using hayro (pure Rust).
+pub fn render_hayro(buf: &[u8], options: &RenderOptions) -> Result<RenderedDocument, String> {
+    let data = Arc::new(buf.to_vec());
+    let pdf = Pdf::new(data).map_err(|e| format!("failed to parse PDF: {:?}", e))?;
+
+    let interpreter_settings = InterpreterSettings::default();
+    let render_settings = RenderSettings {
+        x_scale: options.scale,
+        y_scale: options.scale,
+        ..Default::default()
+    };
+
+    let mut pages = Vec::new();
+    for page in pdf.pages().iter() {
+        let pixmap = render(page, &interpreter_settings, &render_settings);
+        let png_data = pixmap.take_png();
+        pages.push(png_data);
+    }
+
+    Ok(pages)
 }
