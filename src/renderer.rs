@@ -298,7 +298,7 @@ where
     let out = command_fn(&input_path, &output_dir)?;
 
     if !out.stderr.is_empty() {
-        eprintln!("{:?}", String::from_utf8_lossy(&out.stderr));
+        log::warn!("{}", String::from_utf8_lossy(&out.stderr));
     }
 
     let mut out_files: Vec<(i32, PathBuf)> = fs::read_dir(dir.path())
