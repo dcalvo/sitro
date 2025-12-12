@@ -32,6 +32,7 @@ pub type RenderedDocument = Vec<RenderedPage>;
 /// A PDF backend used to render a PDF. Each backend calls a command-line
 /// utility in the background (except Hayro which is pure Rust).
 #[derive(Copy, Clone, Eq, PartialEq)]
+#[allow(dead_code)] // Variants are constructed via string matching in pdf-validate
 pub enum Renderer {
     /// The pdfium renderer.
     Pdfium,
