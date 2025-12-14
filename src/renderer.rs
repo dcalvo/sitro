@@ -8,6 +8,7 @@ use std::{env, fs};
 use tempdir::TempDir;
 use tiny_skia::{Paint, PathBuilder, Pixmap, PixmapPaint, Stroke, Transform};
 
+use hayro::vello_cpu::color::palette::css::WHITE;
 use hayro::{render, Pdf, RenderSettings};
 use hayro_interpret::InterpreterSettings;
 
@@ -356,13 +357,16 @@ pub fn render_hayro(buf: &[u8], options: &RenderOptions) -> Result<RenderedDocum
     let render_settings = RenderSettings {
         x_scale: options.scale,
         y_scale: options.scale,
+        bg_color: WHITE,
         ..Default::default()
     };
 
     let mut pages = Vec::new();
     for page in pdf.pages().iter() {
         let pixmap = render(page, &interpreter_settings, &render_settings);
-        let png_data = pixmap.into_png().map_err(|e| format!("PNG encoding failed: {:?}", e))?;
+        let png_data = pixmap
+            .into_png()
+            .map_err(|e| format!("PNG encoding failed: {:?}", e))?;
         pages.push(png_data);
     }
 
