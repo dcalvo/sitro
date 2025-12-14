@@ -362,7 +362,7 @@ pub fn render_hayro(buf: &[u8], options: &RenderOptions) -> Result<RenderedDocum
     let mut pages = Vec::new();
     for page in pdf.pages().iter() {
         let pixmap = render(page, &interpreter_settings, &render_settings);
-        let png_data = pixmap.take_png();
+        let png_data = pixmap.into_png().map_err(|e| format!("PNG encoding failed: {:?}", e))?;
         pages.push(png_data);
     }
 

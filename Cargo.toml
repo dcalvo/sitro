@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 hayro = "0.4"
 hayro-interpret = "0.4"
-image = { version = "0.24.7", features = ["png"] }
+image = { version = "0.24.7", default-features = false, features = ["png"] }
 imagesize = "0.12.0"
 log = "0.4"
 rayon = "1.8.1"
